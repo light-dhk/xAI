@@ -12,3 +12,4 @@ Thumbs.db
 *.egg-info/
 dist/
 build/
+saved_reports/
