@@ -1,0 +1,14 @@
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+.streamlit/secrets.toml
+.env
+.env.*
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+*.egg-info/
+dist/
+build/
