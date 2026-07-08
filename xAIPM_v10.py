@@ -438,6 +438,33 @@ def render_main_editor() -> None:
     )
 
 
+def render_help_button() -> None:
+    """Quick in-app guide. See MANUAL.md (next to this app) for full details."""
+    with st.popover("\u2753 Help"):
+        st.markdown(
+            f"""
+**Quick Guide**
+
+- **Base Prompt Area** (sidebar, top): shared instructions/base data sent to
+  every AI. Auto-loads `{TEMPLATE_FILENAME}` if it's next to this app.
+  `\U0001F4E4` uploads a different `.md` template; `\U0001F4CB` copies the
+  current text to the clipboard.
+- **History** (sidebar, bottom): saved sessions, newest on top, one line each
+  (`date.time.AI.topic`). Check the box to append that entry into the Editor.
+- **Main Editor**:
+  - *Target AI / Date / Time / Topic* — labels for the current entry.
+    Date/Time default to now; they reset whenever you append a History item
+    or click Clear.
+  - `\U0001F5D1\ufe0f Clear` — reset the Editor and the header fields.
+  - `\U0001F4CB Paste` — insert clipboard content into the Editor.
+  - `\U0001F4C4 Copy` — copy the whole Editor content to the clipboard.
+  - `\U0001F4BE Save` — write a `.md` report to `{SAVE_DIR}/` and add it to History.
+
+Full guide: `MANUAL.md` (same folder as this app).
+"""
+        )
+
+
 def render_custom_css() -> None:
     """Minimal CSS for card-like widgets, on top of color/font theming."""
     st.markdown(
@@ -484,7 +511,11 @@ def main() -> None:
         st.divider()
         render_sidebar_history()
 
-    st.title("\U0001F6E0\ufe0f Cross-AI Prompt Manager")
+    col_title, col_help = st.columns([6, 1], vertical_alignment="center")
+    with col_title:
+        st.title("\U0001F6E0\ufe0f Cross-AI Prompt Manager")
+    with col_help:
+        render_help_button()
     render_main_editor()
 
 

@@ -1,4 +1,4 @@
 @echo off
 cd /d "%~dp0"
-streamlit run xAIPM01.py
+streamlit run xAIPM_v10.py
 pause
