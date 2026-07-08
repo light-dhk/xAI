@@ -20,7 +20,7 @@ import streamlit as st
 # Constants
 # ---------------------------------------------------------------------------
 SAVE_DIR = "saved_reports"
-AI_OPTIONS = ["ChatGPT", "Claude", "Perplexity", "Gemini", "Other"]
+AI_OPTIONS = ["ChatGPT", "Claude", "Gemini", "Other"]
 TEMPLATE_FILENAME = "PromptTemplate.md"  # Auto-loaded at startup if present next to xAIPM.py (Base Prompt Area)
 EDITOR_TEMPLATE_FILENAME = "EditorTemplate.md"  # Auto-loaded at startup if present next to xAIPM.py (Main Editor)
 
