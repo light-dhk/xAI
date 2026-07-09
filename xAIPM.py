@@ -1,52 +1,41 @@
 """
-Cross-AI Prompt Manager - MVP
+Cross-AI Prompt Manager - Cloud Edition
 Design doc: 260709_BluePrint_Cross-AI_Prompt_Manager_v1.3.md
 
-Runtime: Windows only, fully local (streamlit run xAIPM.py)
+Runtime: Streamlit Community Cloud (or any remote Streamlit server).
 """
 
+import json
 import os
 import re
-import webbrowser
+import uuid
 from datetime import datetime
 
-try:
-    import pyperclip
-except ImportError:
-    pyperclip = None  # Guarded with a None check in do_paste()
 import streamlit as st
+import streamlit.components.v1 as components
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-SAVE_DIR = "saved_reports"
-AI_OPTIONS = ["ChatGPT", "Claude", "Gemini", "Other"]
-TEMPLATE_FILENAME = "PromptTemplate.md"  # Auto-loaded at startup if present next to xAIPM.py (Base Prompt Area)
-EDITOR_TEMPLATE_FILENAME = "EditorTemplate.md"  # Auto-loaded at startup if present next to xAIPM.py (Main Editor)
+SAVE_DIR = "saved_reports"  
+DEFAULT_TARGET_AI = "Claude"
+TEMPLATE_FILENAME = "WorkFlowTemplate.md"  
+EDITOR_TEMPLATE_FILENAME = "EditorTemplate.md"  
 
-# History row font size. Default body text is ~1rem; this is roughly 1/3 of
-# that while staying legible. Lower it further (e.g. "0.4rem") if you want it
-# even smaller — combined with the nowrap/ellipsis CSS below it will still
-# render as a single line either way.
 HISTORY_FONT_SIZE = "0.62rem"
 
-# AI chat sites opened as browser tabs on startup.
-# Note: the official Anthropic Claude site is claude.ai (not claude.io).
-AI_CHAT_URLS = [
-    "https://chatgpt.com",
-    "https://claude.ai",
-    "https://gemini.google.com",
-]
+AI_CHAT_SITES = {
+    "ChatGPT": "https://chatgpt.com",
+    "Claude": "https://claude.ai",
+    "Gemini": "https://gemini.google.com",
+}
 
 
 # ---------------------------------------------------------------------------
 # State initialization (session_state)
 # ---------------------------------------------------------------------------
 def load_default_prompt_template() -> str:
-    """
-    Auto-load PromptTemplate.md from the same folder as xAIPM.py at startup.
-    Returns an empty string if the file is missing or unreadable (editor starts blank).
-    """
+    """Auto-load WorkFlowTemplate.md from the same folder at startup."""
     try:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         template_path = os.path.join(base_dir, TEMPLATE_FILENAME)
@@ -59,10 +48,7 @@ def load_default_prompt_template() -> str:
 
 
 def load_default_editor_template() -> str:
-    """
-    Auto-load EditorTemplate.md from the same folder as xAIPM.py at startup.
-    Returns an empty string if the file is missing or unreadable.
-    """
+    """Same idea as load_default_prompt_template(), for the Main Editor."""
     try:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         template_path = os.path.join(base_dir, EDITOR_TEMPLATE_FILENAME)
@@ -74,54 +60,22 @@ def load_default_editor_template() -> str:
     return ""
 
 
-def open_ai_chat_tabs_once() -> None:
-    """
-    Open ChatGPT / Claude / Gemini in new browser tabs, once per session.
-    Guarded by a session flag because Streamlit reruns the whole script on every
-    widget interaction — without the guard, tabs would reopen on every click.
-    """
-    if not st.session_state.get("_ai_tabs_opened", False):
-        for url in AI_CHAT_URLS:
-            try:
-                webbrowser.open_new_tab(url)
-            except Exception:
-                pass
-        st.session_state["_ai_tabs_opened"] = True
-
-
 def init_state() -> None:
-    # initial_prompt is auto-loaded from PromptTemplate.md once per session only.
     if "initial_prompt" not in st.session_state:
         st.session_state["initial_prompt"] = load_default_prompt_template()
 
-    # editor_text is auto-loaded from EditorTemplate.md once per session, and if
-    # non-empty, is also surfaced as a History entry (no saved_reports file is
-    # written yet — actual disk save still only happens via the [Save] button;
-    # this just previews the template as a History row too).
     if "editor_text" not in st.session_state:
-        editor_template = load_default_editor_template()
-        st.session_state["editor_text"] = editor_template
-        if editor_template:
-            st.session_state.setdefault("history", [])
-            now = datetime.now()
-            st.session_state["history"].insert(
-                0,
-                {
-                    "date": now.strftime("%m-%d"),
-                    "time": now.strftime("%H:%M"),
-                    "ai": "Template",
-                    "topic": "Initial Editor Template",
-                    "content": editor_template,
-                    "filename": "__editor_template__",
-                },
-            )
-
+        st.session_state["editor_text"] = load_default_editor_template()
+        
     if "header_ai" not in st.session_state:
         reset_header()
 
     defaults = {
-        "history": [],  # [{date, time, ai, topic, content, filename}, ...] LIFO (index 0 = newest)
+        "history": [],  
         "_last_uploaded_name": None,
+        "_last_saved_content": None,
+        "_last_saved_filename": None,
+        "setup_complete": False, 
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -132,7 +86,6 @@ def init_state() -> None:
 # Utilities
 # ---------------------------------------------------------------------------
 def sanitize_for_filename(text: str) -> str:
-    """Replace characters that would break a filename or YAML frontmatter."""
     if not text:
         return "untitled"
     cleaned = re.sub(r'[\\/*?:"<>|\r\n]', "_", text).strip()
@@ -140,34 +93,63 @@ def sanitize_for_filename(text: str) -> str:
 
 
 def sanitize_for_yaml(text: str) -> str:
-    """Replace colons/newlines that would break YAML frontmatter parsing."""
     if not text:
         return ""
     return text.replace("\n", " ").replace(":", "-")
 
 
 def reset_header() -> None:
-    """
-    Reset Header (AI/date/time/topic). Date/Time default to the current
-    date/time for convenience (the user can still edit them); Topic stays
-    blank since it's unique per entry. (Shared by init / Reset-on-Append / Clear)
-    """
     now = datetime.now()
-    st.session_state["header_ai"] = AI_OPTIONS[0]
+    st.session_state["header_ai"] = DEFAULT_TARGET_AI
     st.session_state["header_date"] = now.strftime("%m-%d")
     st.session_state["header_time"] = now.strftime("%H:%M")
     st.session_state["header_topic"] = ""
 
 
 # ---------------------------------------------------------------------------
+# Client-side clipboard copy
+# ---------------------------------------------------------------------------
+def clipboard_copy_button(text: str, label: str, key: str, help_text: str = "Copy", bg_color: str = "transparent") -> None:
+    safe_text = json.dumps(text or "")
+    html_code = f"""
+    <html><body style="margin:0;padding:0;background:transparent;">
+    <button id="{key}" title="{help_text}" style="
+        width:100%; height:35px; margin:0; padding:0.1rem 0.3rem;
+        border:1px solid gray; border-radius:0.4rem;
+        background-color:{bg_color}; color:inherit; cursor:pointer;
+        font-size:1.2rem; line-height:1.0; font-family:inherit;
+        display:flex; align-items:center; justify-content:center;">
+        {label}
+    </button>
+    <script>
+    const btn_{key} = document.getElementById("{key}");
+    const original_{key} = btn_{key}.innerText;
+    btn_{key}.addEventListener("mouseenter", () => {{
+        btn_{key}.style.filter = "brightness(1.1)";
+    }});
+    btn_{key}.addEventListener("mouseleave", () => {{
+        btn_{key}.style.filter = "none";
+    }});
+    btn_{key}.addEventListener("click", async () => {{
+        try {{
+            await navigator.clipboard.writeText({safe_text});
+            btn_{key}.innerText = "\u2705";
+            setTimeout(() => {{ btn_{key}.innerText = original_{key}; }}, 1200);
+        }} catch (err) {{
+            btn_{key}.innerText = "\u26a0\ufe0f";
+            setTimeout(() => {{ btn_{key}.innerText = original_{key}; }}, 1200);
+        }}
+    }});
+    </script>
+    </body></html>
+    """
+    components.html(html_code, height=35)
+
+
+# ---------------------------------------------------------------------------
 # Callback: Sidebar History checkbox -> Editor Append + Header Reset
 # ---------------------------------------------------------------------------
 def on_history_check(idx: int, widget_key: str) -> None:
-    """
-    Append only fires the instant the checkbox flips to True, then the checkbox
-    is immediately reset back to False so the same entry can be appended again
-    later. (Using a checkbox as a momentary "trigger button" rather than a toggle.)
-    """
     if not st.session_state.get(widget_key):
         return
 
@@ -179,93 +161,21 @@ def on_history_check(idx: int, widget_key: str) -> None:
     )
     st.session_state["editor_text"] = st.session_state.get("editor_text", "") + block
     reset_header()
-
-    # Reset the checkbox back to False so it can be reused
     st.session_state[widget_key] = False
 
 
 # ---------------------------------------------------------------------------
-# Callback: Paste / Clear / Save
+# Callback: Clear / Save
 # ---------------------------------------------------------------------------
-def do_paste() -> None:
-    if pyperclip is None:
-        st.session_state["_paste_status"] = (
-            "error",
-            "The pyperclip module is not installed. Please run 'pip install pyperclip'.",
-        )
-        return
-
-    try:
-        clipboard_text = pyperclip.paste()
-    except pyperclip.PyperclipException:
-        clipboard_text = ""
-
-    if not clipboard_text:
-        st.session_state["_paste_status"] = (
-            "warning",
-            "Clipboard is empty or does not contain readable text.",
-        )
-        return
-
-    current = st.session_state.get("editor_text", "")
-    separator = "\n\n" if current else ""
-    st.session_state["editor_text"] = current + separator + clipboard_text
-    st.session_state["_paste_status"] = ("success", "Clipboard content pasted.")
-
-
-def do_copy_prompt() -> None:
-    """Copy the current Initial Prompt content to the system clipboard, so it
-    can be quickly pasted into ChatGPT / Claude / Gemini's chat windows."""
-    if pyperclip is None:
-        st.session_state["_prompt_copy_status"] = (
-            "error",
-            "The pyperclip module is not installed. Please run 'pip install pyperclip'.",
-        )
-        return
-
-    try:
-        pyperclip.copy(st.session_state.get("initial_prompt", ""))
-        st.session_state["_prompt_copy_status"] = ("success", "Initial Prompt copied to clipboard.")
-    except pyperclip.PyperclipException as e:
-        st.session_state["_prompt_copy_status"] = ("error", f"Copy failed: {e}")
-
-
-def do_copy_editor() -> None:
-    """Copy the entire Editor content to the system clipboard."""
-    if pyperclip is None:
-        st.session_state["_editor_copy_status"] = (
-            "error",
-            "The pyperclip module is not installed. Please run 'pip install pyperclip'.",
-        )
-        return
-
-    try:
-        pyperclip.copy(st.session_state.get("editor_text", ""))
-        st.session_state["_editor_copy_status"] = ("success", "Editor content copied to clipboard.")
-    except pyperclip.PyperclipException as e:
-        st.session_state["_editor_copy_status"] = ("error", f"Copy failed: {e}")
-
-
 def do_clear() -> None:
     st.session_state["editor_text"] = ""
-    reset_header()
+    st.session_state.pop("_last_saved_content", None)
+    st.session_state.pop("_last_saved_filename", None)
 
 
-def do_save() -> None:
-    ai = st.session_state.get("header_ai", "").strip() or AI_OPTIONS[0]
-    header_date = st.session_state.get("header_date", "").strip() or datetime.now().strftime("%m-%d")
-    time_str = st.session_state.get("header_time", "").strip() or datetime.now().strftime("%H:%M")
-    topic = st.session_state.get("header_topic", "").strip() or "Untitled"
-    body = st.session_state.get("editor_text", "")
-    initial_prompt = st.session_state.get("initial_prompt", "")
-
-    now = datetime.now()
-    file_timestamp = now.strftime("%Y%m%d_%H%M%S")  # actual system time, for filename uniqueness only
-    safe_ai = sanitize_for_filename(ai)
-    safe_topic = sanitize_for_filename(topic)
-    filename = f"{file_timestamp}_{safe_ai}_{safe_topic}.md"
-
-    md_content = (
+def build_report_md(ai: str, header_date: str, time_str: str, topic: str,
+                     initial_prompt: str, body: str) -> str:
+    return (
         "---\n"
         f"Target_AI: {sanitize_for_yaml(ai)}\n"
         f"Date_Time: {sanitize_for_yaml(header_date)} {sanitize_for_yaml(time_str)}\n"
@@ -278,25 +188,40 @@ def do_save() -> None:
         f"{body}\n"
     )
 
+
+def do_save() -> None:
+    ai = st.session_state.get("header_ai", "").strip() or DEFAULT_TARGET_AI
+    header_date = st.session_state.get("header_date", "").strip() or datetime.now().strftime("%m-%d")
+    time_str = st.session_state.get("header_time", "").strip() or datetime.now().strftime("%H:%M")
+    topic = st.session_state.get("header_topic", "").strip() or "Untitled"
+    body = st.session_state.get("editor_text", "")
+    initial_prompt = st.session_state.get("initial_prompt", "")
+
+    now = datetime.now()
+    file_timestamp = now.strftime("%Y%m%d_%H%M%S")
+    safe_ai = sanitize_for_filename(ai)
+    safe_topic = sanitize_for_filename(topic)
+    
+    unique_id = uuid.uuid4().hex[:6]
+    filename = f"{file_timestamp}_{safe_ai}_{safe_topic}_{unique_id}.md"
+
+    md_content = build_report_md(ai, header_date, time_str, topic, initial_prompt, body)
+
     try:
         os.makedirs(SAVE_DIR, exist_ok=True)
         filepath = os.path.join(SAVE_DIR, filename)
-
-        # Prevent silent overwrite when saving twice within the same second
         counter = 1
         base_name, ext = os.path.splitext(filename)
         while os.path.exists(filepath):
             filename = f"{base_name}_{counter}{ext}"
             filepath = os.path.join(SAVE_DIR, filename)
             counter += 1
-
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(md_content)
+        disk_status = ("success", filename)
     except OSError as e:
-        st.session_state["_save_status"] = ("error", f"Save failed: {e}")
-        return
+        disk_status = ("warning", f"Disk write skipped ({e}) - use the download button to keep your copy.")
 
-    # Add to History as LIFO (index 0 = newest)
     st.session_state["history"].insert(
         0,
         {
@@ -308,12 +233,103 @@ def do_save() -> None:
             "filename": filename,
         },
     )
-    st.session_state["_save_status"] = ("success", filename)
+    st.session_state["_last_saved_content"] = md_content
+    st.session_state["_last_saved_filename"] = filename
+    st.session_state["_save_status"] = disk_status
+
+
+# ---------------------------------------------------------------------------
+# Popup Wizard: Setup Cross-Check Workflow (Streamlit 1.34+ Required)
+# ---------------------------------------------------------------------------
+@st.dialog("🚀 초기 설정: WorkFlow & 프롬프트 생성기", width="large")
+def setup_wizard_popup():
+    st.markdown("선행기술 및 시장동향 조사를 위한 **AI 크로스체크 프로세스**를 설정합니다.")
+    
+    topic = st.text_input("🔍 조사 주제", placeholder="예: 2026년 글로벌 전고체 배터리 시장 동향", key="wizard_topic")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        ai1_role = st.selectbox("🤖 선발대 세부 역할 (수집)", [
+            "자료 검색 및 광범위한 트렌드 요약", 
+            "최신 뉴스 및 통계 데이터 수집", 
+            "핵심 기술 및 원리 분석"
+        ])
+    with col2:
+        ai2_role = st.selectbox("⚖️ 검증 세부 역할 (교차검증)", [
+            "제공된 자료의 비판적 검토 및 논리적 모순 체크", 
+            "경쟁사 대비 약점 분석 및 한계점 지적", 
+            "데이터 팩트 체크 및 누락된 시각 보완"
+        ])
+        
+    report_format = st.text_input("📑 인용 스타일 / 세부 포맷", value="마크다운 3단락 (핵심 요약, 세부 분석, 결론 및 전망)", key="wizard_format")
+
+    st.divider()
+    if st.button("프롬프트 자동 생성 및 시작", type="primary", use_container_width=True):
+        if not topic:
+            st.error("조사 주제를 입력해주세요!")
+        else:
+            # 1. 팝업 내용 기반 프롬프트 템플릿 구성
+            generated_prompt = f"""# Cross-AI WorkFlow Blueprint
+
+## 1. 시스템 지시사항 (System Instructions)
+- **[역할]** 너는 사회과학 및 관련 분야 체계적 문헌고찰 경험이 있는 연구 보조원이다. (추가 부여 역할: {ai1_role}, {ai2_role})
+- **[범위/권한]** 명시된 시기·지역·분야를 벗어난 추론 금지. 출처에 없는 내용은 "근거 부족"으로 명시. 확신 없는 주장은 단정하지 말 것.
+- **[제약]** 특정 이론적 입장을 강요하지 말 것. 원문 그대로 인용 금지, 반드시 패러프레이즈 할 것.
+- **[포맷 규칙]** 표/불릿 활용, 인용 스타일은 요청 시 지정된 것을 따름. (지정 포맷: {report_format})
+
+## 2. 조사 주제
+- **{topic}**
+
+## 3. 크로스체크 프로세스 (AI 역할 분담 및 워크플로우)
+
+**[Step 1: 병렬 리서치] - Gemini, Claude, ChatGPT 공통 수행**
+- 3개의 AI는 위 주제에 대하여 독립적으로 초기 데이터와 트렌드를 조사한다.
+- 각자의 응답 창에 지시사항에 맞게 패러프레이징 된 기본 조사 내용을 요약하여 출력한다.
+
+**[Step 2: 취합/검증 및 보고서 설계] - Claude 전담 수행**
+- Step 1에서 생성된 다른 AI(Gemini, ChatGPT)의 조사 결과물들을 Claude에게 전달한다.
+- Claude는 모든 자료를 종합하여 논리적 모순을 비판적으로 교차 검증하고 누락된 팩트를 보완한다.
+- 검증된 최종 내용을 바탕으로 Markdown(.md) 형식의 상세한 보고서(설계도)를 작성한다.
+
+**[Step 3: 최종 장표 이미지 생성] - Gemini 전담 수행**
+- Step 2에서 완성된 Claude의 마크다운 보고서 설계를 Gemini에게 전달한다.
+- Gemini는 해당 보고서를 기반으로, 전체 내용을 시각적으로 요약하는 1장짜리 발표용 장표 이미지를 생성한다.
+"""
+            # 2. 생성된 프롬프트를 좌측(WorkFlow)이 아닌 우측(Main Editor)에 바로 삽입
+            st.session_state["editor_text"] = generated_prompt
+            
+            # 3. Save() 효과를 내기 위한 헤더 설정
+            now = datetime.now()
+            st.session_state["header_ai"] = "WorkFlow Blueprint"
+            st.session_state["header_topic"] = topic
+            st.session_state["header_date"] = now.strftime("%m-%d")
+            st.session_state["header_time"] = now.strftime("%H:%M")
+            
+            # 4. 실제 Save 액션 호출 (History에 자동 추가 및 다운로드 버튼 활성화됨)
+            do_save()
+            
+            # 5. 팝업 상태 완료 처리 후 새로고침 (팝업 닫힘)
+            st.session_state["setup_complete"] = True
+            st.rerun()
 
 
 # ---------------------------------------------------------------------------
 # UI rendering
 # ---------------------------------------------------------------------------
+def render_ai_links() -> None:
+    links_html = " &nbsp;\u00b7&nbsp; ".join(
+        f'<a href="{url}" target="_blank" style="color:#1a73e8; text-decoration:underline;">{name}</a>'
+        for name, url in AI_CHAT_SITES.items()
+    )
+    st.markdown(
+        f"""<div style="
+            text-align:right; white-space:nowrap; overflow:hidden;
+            font-size:0.9rem; padding-top:1.4rem;
+        ">{links_html}</div>""",
+        unsafe_allow_html=True,
+    )
+
+
 def render_sidebar_history() -> None:
     st.markdown("### \U0001F4DA History")
 
@@ -321,9 +337,6 @@ def render_sidebar_history() -> None:
         st.caption("No saved history yet.")
         return
 
-    # Compact one-line rows: checkbox + "date.time.AI.topic" — no separate
-    # preview/expander, since checking the box already loads the full content
-    # into the editor.
     for idx, entry in enumerate(st.session_state["history"]):
         label = f"{entry['date']}.{entry['time']}.{entry['ai']}.{entry['topic']}"
         widget_key = f"hist_chk_{entry['filename']}"
@@ -354,11 +367,11 @@ def render_sidebar_history() -> None:
 def render_base_prompt_area() -> None:
     col_label, col_upload, col_copy = st.columns([3, 1, 1])
     with col_label:
-        st.markdown("**Initial Prompt / Base Data**")
+        st.markdown("**xAI WorkFlow**")
     with col_upload:
-        with st.popover("\U0001F4E4"):
+        with st.popover("\U0001F4C2", help="Load Template (.md)"):
             uploaded_file = st.file_uploader(
-                "Load a different template (.md)",
+                "Load a different WorkFlow template (.md)",
                 type=["md"],
                 key="_uploader",
             )
@@ -369,34 +382,59 @@ def render_base_prompt_area() -> None:
                 except UnicodeDecodeError:
                     st.warning("Please check the file encoding (UTF-8 recommended).")
     with col_copy:
-        st.button(
-            "\U0001F4CB",
-            key="_copy_prompt_btn",
-            on_click=do_copy_prompt,
-            help="Copy Initial Prompt to clipboard",
-            use_container_width=True,
+        clipboard_copy_button(
+            st.session_state.get("initial_prompt", ""),
+            label="\U0001F4CB",
+            key="copy_prompt_btn",
+            help_text="Copy WorkFlow Content"
         )
 
     if st.session_state.get("_last_uploaded_name") is None and st.session_state.get("initial_prompt"):
         st.caption(f"Auto-loaded from `{TEMPLATE_FILENAME}`")
 
-    if "_prompt_copy_status" in st.session_state:
-        status, msg = st.session_state.pop("_prompt_copy_status")
-        st.toast(("\u2705 " if status == "success" else "\u26A0\ufe0f ") + msg)
+    with st.container(key="workflow_textarea_container"):
+        st.text_area(
+            "xAI WorkFlow",
+            key="initial_prompt",
+            height=250,
+            placeholder="Enter the base data or initial instructions to send to every AI.",
+            label_visibility="collapsed",
+        )
 
-    st.text_area(
-        "Initial Prompt / Base Data",
-        key="initial_prompt",
-        height=100,
-        placeholder="Enter the base data or initial instructions to send to every AI.",
-        label_visibility="collapsed",
-    )
+
+def render_editor_actions() -> None:
+    col_label, col_clear, col_copy, col_save = st.columns([10, 1, 1, 1], vertical_alignment="center")
+    with col_label:
+        st.markdown("<span style='font-size: 1.5em; font-weight: bold;'>Editor Window</span>", unsafe_allow_html=True)
+    with col_clear:
+        with st.container(key="clear_btn_box"):
+            st.button("\U0001F5D1\ufe0f", key="_clear_btn", on_click=do_clear,
+                       use_container_width=True, help="Clear editor (Header kept)")
+    with col_copy:
+        clipboard_copy_button(
+            st.session_state.get("editor_text", ""),
+            label="\U0001F4C4",
+            key="copy_editor_btn",
+            help_text="Copy Editor Content",
+            bg_color="#2ecc71",
+        )
+    with col_save:
+        with st.container(key="save_btn_box"):
+            st.button("\U0001F4BE", key="_save_btn", on_click=do_save, type="primary",
+                       use_container_width=True, help="Save entry to history")
+
+    if "_save_status" in st.session_state:
+        status, msg = st.session_state.pop("_save_status")
+        if status == "success":
+            st.toast(f"\u2705 Saved to server session: {msg}")
+        else:
+            st.toast(f"\u26A0\ufe0f {msg}")
 
 
 def render_main_editor() -> None:
     col_ai, col_date, col_time, col_topic = st.columns([1, 1, 1, 3])
     with col_ai:
-        st.selectbox("Target AI", AI_OPTIONS, key="header_ai")
+        st.text_input("Target AI", key="header_ai", placeholder="e.g. Claude")
     with col_date:
         st.text_input("Date", key="header_date", placeholder="e.g. 07-08")
     with col_time:
@@ -404,85 +442,95 @@ def render_main_editor() -> None:
     with col_topic:
         st.text_input("Topic", key="header_topic", placeholder="Conversation topic / title")
 
-    col_clear, col_paste, col_copy, col_save = st.columns(4)
-    with col_clear:
-        st.button("\U0001F5D1\ufe0f Clear", on_click=do_clear, use_container_width=True)
-    with col_paste:
-        st.button("\U0001F4CB Paste", on_click=do_paste, use_container_width=True)
-    with col_copy:
-        st.button("\U0001F4C4 Copy", on_click=do_copy_editor, use_container_width=True)
-    with col_save:
-        st.button("\U0001F4BE Save", on_click=do_save, type="primary", use_container_width=True)
+    render_editor_actions()
 
-    # Paste / Copy / Save result feedback (toast)
-    if "_paste_status" in st.session_state:
-        status, msg = st.session_state.pop("_paste_status")
-        st.toast(("\u2705 " if status == "success" else "\u26A0\ufe0f ") + msg)
+    with st.container(key="main_editor_container"):
+        st.text_area(
+            "Editor",
+            key="editor_text",
+            height=590,
+            placeholder="Paste an AI reply, or select a previous entry from History on the left to append it.",
+            label_visibility="collapsed"
+        )
 
-    if "_editor_copy_status" in st.session_state:
-        status, msg = st.session_state.pop("_editor_copy_status")
-        st.toast(("\u2705 " if status == "success" else "\u26A0\ufe0f ") + msg)
-
-    if "_save_status" in st.session_state:
-        status, msg = st.session_state.pop("_save_status")
-        if status == "success":
-            st.toast(f"\u2705 Saved: {msg}")
-        else:
-            st.toast(f"\u26A0\ufe0f {msg}")
-
-    st.text_area(
-        "Editor",
-        key="editor_text",
-        height=560,
-        placeholder="Paste an AI reply, or select a previous entry from History on the left to append it.",
-    )
+    if st.session_state.get("_last_saved_content"):
+        st.download_button(
+            f"\U0001F4E5 Download last saved report ({st.session_state['_last_saved_filename']})",
+            data=st.session_state["_last_saved_content"],
+            file_name=st.session_state["_last_saved_filename"],
+            mime="text/markdown",
+            use_container_width=True,
+            help="Download the report file to your PC permanently"
+        )
 
 
 def render_help_button() -> None:
-    """Quick in-app guide. See MANUAL.md (next to this app) for full details."""
-    with st.popover("\u2753 Help"):
+    with st.popover("\u2753 Help", help="Show Help Guide"):
         st.markdown(
             f"""
-**Quick Guide**
-
-- **Base Prompt Area** (sidebar, top): shared instructions/base data sent to
-  every AI. Auto-loads `{TEMPLATE_FILENAME}` if it's next to this app.
-  `\U0001F4E4` uploads a different `.md` template; `\U0001F4CB` copies the
-  current text to the clipboard.
-- **History** (sidebar, bottom): saved sessions, newest on top, one line each
-  (`date.time.AI.topic`). Check the box to append that entry into the Editor.
-- **Main Editor**:
-  - *Target AI / Date / Time / Topic* — labels for the current entry.
-    Date/Time default to now; they reset whenever you append a History item
-    or click Clear.
-  - `\U0001F5D1\ufe0f Clear` — reset the Editor and the header fields.
-  - `\U0001F4CB Paste` — insert clipboard content into the Editor.
-  - `\U0001F4C4 Copy` — copy the whole Editor content to the clipboard.
-  - `\U0001F4BE Save` — write a `.md` report to `{SAVE_DIR}/` and add it to History.
-
-Full guide: `MANUAL.md` (same folder as this app).
+**Quick Guide (Cloud Edition)**
+- **AI links**: Click ChatGPT / Claude / Gemini to open in a new tab.
+- **xAI WorkFlow**: Shared instructions/base data sent to every AI.
+- **History**: Check the box to append that entry into the Editor.
+- **Main Editor**: 
+  - \U0001F5D1\ufe0f Clear (Clears text only), \U0001F4C4 Copy (Copies text), \U0001F4BE Save (Adds to history & activates download).
+  - Click Editor box and press Ctrl+V/Cmd+V to paste.
 """
         )
 
 
 def render_custom_css() -> None:
-    """Minimal CSS for card-like widgets, on top of color/font theming."""
     st.markdown(
         """
         <style>
         [data-testid="stVerticalBlockBorderWrapper"] {
             border-radius: 12px;
         }
-        div.stButton > button {
+        div.stDownloadButton > button, div.stLinkButton > a {
             border-radius: 8px;
         }
-        /* Pull the page content up — Streamlit's default top padding pushes
-           the title down noticeably. */
+        
+        /* 모든 버튼 및 팝오버 높이를 35px로 정확히 일치시키고 크기 균형 조정 */
+        div.stButton > button, div.stPopover > button {
+            padding: 0.1rem 0.3rem !important;
+            min-height: unset !important;
+            height: 35px !important;
+            font-size: 1.2rem !important;
+            border-radius: 0.4rem !important;
+        }
+        
+        /* [Clear] 버튼의 배경색을 skyblue 로 변경 */
+        .st-key-clear_btn_box div.stButton > button {
+            background-color: skyblue !important;
+            border: 1px solid gray !important;
+            color: black !important;
+            box-shadow: none !important;
+        }
+        .st-key-save_btn_box div.stButton > button {
+            background-color: #3498db !important;
+            border: 1px solid gray !important;
+            color: white !important;
+        }
+        .st-key-clear_btn_box div.stButton > button:hover,
+        .st-key-save_btn_box div.stButton > button:hover {
+            filter: brightness(1.1);
+        }
+        
+        /* 좌측 WorkFlow 창 내용의 폰트 크기를 8pt 수준(약 0.68rem)으로 축소하고 줄간격 강제 제거 */
+        .st-key-workflow_textarea_container div[data-testid="stTextArea"] textarea {
+            font-size: 0.68rem !important;
+            line-height: 1.0 !important;
+            padding: 0.4rem !important;
+        }
+        
+        /* 에디터 윈도우가 너무 올라와 겹치던 문제를 해결하기 위해 마진을 약 5mm(19px) 아래로 조정 */
+        .st-key-main_editor_container {
+            margin-top: -5px !important;
+        }
+        
         [data-testid="stAppViewContainer"] .block-container {
             padding-top: 1.5rem;
         }
-        /* Same trim for the sidebar, so Base Prompt Area sits higher and
-           History gets more vertical room below it. */
         [data-testid="stSidebar"] .block-container {
             padding-top: 1rem;
         }
@@ -503,7 +551,11 @@ def main() -> None:
         initial_sidebar_state="expanded",
     )
     init_state()
-    open_ai_chat_tabs_once()
+    
+    # 최초 진입 시 Setup 팝업 띄우기
+    if not st.session_state.get("setup_complete"):
+        setup_wizard_popup()
+
     render_custom_css()
 
     with st.sidebar:
@@ -511,11 +563,17 @@ def main() -> None:
         st.divider()
         render_sidebar_history()
 
-    col_title, col_help = st.columns([6, 1], vertical_alignment="center")
+    col_title, col_links, col_help = st.columns(
+        [6, 2.5, 0.8], vertical_alignment="top"
+    )
     with col_title:
         st.title("\U0001F6E0\ufe0f Cross-AI Prompt Manager")
+    with col_links:
+        render_ai_links()
     with col_help:
+        st.markdown("<div style='height:0.7cm;'></div>", unsafe_allow_html=True)
         render_help_button()
+
     render_main_editor()
 
 

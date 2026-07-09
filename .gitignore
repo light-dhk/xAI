@@ -13,3 +13,5 @@ Thumbs.db
 dist/
 build/
 backup/
+saved_reports/
+xAIPM_beta.py
