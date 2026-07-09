@@ -73,8 +73,6 @@ def init_state() -> None:
     defaults = {
         "history": [],  
         "_last_uploaded_name": None,
-        "_last_saved_content": None,
-        "_last_saved_filename": None,
         "setup_complete": False, 
     }
     for key, value in defaults.items():
@@ -168,9 +166,8 @@ def on_history_check(idx: int, widget_key: str) -> None:
 # Callback: Clear / Save
 # ---------------------------------------------------------------------------
 def do_clear() -> None:
+    # 에디터 내용만 지우고 다운로드 캐시는 건드리지 않음
     st.session_state["editor_text"] = ""
-    st.session_state.pop("_last_saved_content", None)
-    st.session_state.pop("_last_saved_filename", None)
 
 
 def build_report_md(ai: str, header_date: str, time_str: str, topic: str,
@@ -220,7 +217,7 @@ def do_save() -> None:
             f.write(md_content)
         disk_status = ("success", filename)
     except OSError as e:
-        disk_status = ("warning", f"Disk write skipped ({e}) - use the download button to keep your copy.")
+        disk_status = ("warning", f"Disk write skipped ({e}).")
 
     st.session_state["history"].insert(
         0,
@@ -233,8 +230,6 @@ def do_save() -> None:
             "filename": filename,
         },
     )
-    st.session_state["_last_saved_content"] = md_content
-    st.session_state["_last_saved_filename"] = filename
     st.session_state["_save_status"] = disk_status
 
 
@@ -268,7 +263,6 @@ def setup_wizard_popup():
         if not topic:
             st.error("조사 주제를 입력해주세요!")
         else:
-            # 1. 팝업 내용 기반 프롬프트 템플릿 구성
             generated_prompt = f"""# Cross-AI WorkFlow Blueprint
 
 ## 1. 시스템 지시사항 (System Instructions)
@@ -295,20 +289,16 @@ def setup_wizard_popup():
 - Step 2에서 완성된 Claude의 마크다운 보고서 설계를 Gemini에게 전달한다.
 - Gemini는 해당 보고서를 기반으로, 전체 내용을 시각적으로 요약하는 1장짜리 발표용 장표 이미지를 생성한다.
 """
-            # 2. 생성된 프롬프트를 좌측(WorkFlow)이 아닌 우측(Main Editor)에 바로 삽입
             st.session_state["editor_text"] = generated_prompt
             
-            # 3. Save() 효과를 내기 위한 헤더 설정
             now = datetime.now()
             st.session_state["header_ai"] = "WorkFlow Blueprint"
             st.session_state["header_topic"] = topic
             st.session_state["header_date"] = now.strftime("%m-%d")
             st.session_state["header_time"] = now.strftime("%H:%M")
             
-            # 4. 실제 Save 액션 호출 (History에 자동 추가 및 다운로드 버튼 활성화됨)
             do_save()
             
-            # 5. 팝업 상태 완료 처리 후 새로고침 (팝업 닫힘)
             st.session_state["setup_complete"] = True
             st.rerun()
 
@@ -453,15 +443,33 @@ def render_main_editor() -> None:
             label_visibility="collapsed"
         )
 
-    if st.session_state.get("_last_saved_content"):
-        st.download_button(
-            f"\U0001F4E5 Download last saved report ({st.session_state['_last_saved_filename']})",
-            data=st.session_state["_last_saved_content"],
-            file_name=st.session_state["_last_saved_filename"],
-            mime="text/markdown",
-            use_container_width=True,
-            help="Download the report file to your PC permanently"
-        )
+    # -----------------------------------------------------------------------
+    # 항상 표시되는 최신 상태 다운로드 버튼
+    # -----------------------------------------------------------------------
+    current_ai = st.session_state.get("header_ai", "").strip() or DEFAULT_TARGET_AI
+    current_date = st.session_state.get("header_date", "").strip() or datetime.now().strftime("%m-%d")
+    current_time = st.session_state.get("header_time", "").strip() or datetime.now().strftime("%H:%M")
+    current_topic = st.session_state.get("header_topic", "").strip() or "Untitled"
+    current_initial_prompt = st.session_state.get("initial_prompt", "")
+    current_body = st.session_state.get("editor_text", "")
+
+    # 실시간 입력 데이터를 바탕으로 다운로드용 마크다운 동적 생성
+    current_md = build_report_md(current_ai, current_date, current_time, current_topic, current_initial_prompt, current_body)
+    
+    file_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_ai = sanitize_for_filename(current_ai)
+    safe_topic = sanitize_for_filename(current_topic)
+    unique_id = uuid.uuid4().hex[:6]
+    dynamic_filename = f"{file_timestamp}_{safe_ai}_{safe_topic}_{unique_id}.md"
+
+    st.download_button(
+        label="DOWNLOAD",
+        data=current_md,
+        file_name=dynamic_filename,
+        mime="text/markdown",
+        use_container_width=True,
+        help="Download the current editor content to your PC"
+    )
 
 
 def render_help_button() -> None:
@@ -473,8 +481,9 @@ def render_help_button() -> None:
 - **xAI WorkFlow**: Shared instructions/base data sent to every AI.
 - **History**: Check the box to append that entry into the Editor.
 - **Main Editor**: 
-  - \U0001F5D1\ufe0f Clear (Clears text only), \U0001F4C4 Copy (Copies text), \U0001F4BE Save (Adds to history & activates download).
+  - \U0001F5D1\ufe0f Clear (Clears text only), \U0001F4C4 Copy (Copies text), \U0001F4BE Save (Adds to history).
   - Click Editor box and press Ctrl+V/Cmd+V to paste.
+  - Use DOWNLOAD button at the bottom to save the current editor text.
 """
         )
 
