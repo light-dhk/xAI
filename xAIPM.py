@@ -236,58 +236,59 @@ def do_save() -> None:
 # ---------------------------------------------------------------------------
 # Popup Wizard: Setup Cross-Check Workflow (Streamlit 1.34+ Required)
 # ---------------------------------------------------------------------------
-@st.dialog("🚀 초기 설정: WorkFlow & 프롬프트 생성기", width="large")
+@st.dialog("🚀 Initial Setup: WorkFlow & Prompt Generator", width="large")
 def setup_wizard_popup():
-    st.markdown("선행기술 및 시장동향 조사를 위한 **AI 크로스체크 프로세스**를 설정합니다.")
+    st.markdown("Set up the **AI Cross-Check Process** for prior art and market trend research.")
     
-    topic = st.text_input("🔍 조사 주제", placeholder="예: 2026년 글로벌 전고체 배터리 시장 동향", key="wizard_topic")
+    # Placeholder에 한글을 남겨두어 한글 입력이 가능함을 자연스럽게 안내
+    topic = st.text_input("🔍 Research Topic", placeholder="e.g., 2026년 글로벌 전고체 배터리 시장 동향", key="wizard_topic")
     
     col1, col2 = st.columns(2)
     with col1:
-        ai1_role = st.selectbox("🤖 선발대 세부 역할 (수집)", [
-            "자료 검색 및 광범위한 트렌드 요약", 
-            "최신 뉴스 및 통계 데이터 수집", 
-            "핵심 기술 및 원리 분석"
+        ai1_role = st.selectbox("🤖 Advance Team Role (Data Collection)", [
+            "Data search and comprehensive trend summary", 
+            "Collect latest news and statistical data", 
+            "Analyze core technologies and principles"
         ])
     with col2:
-        ai2_role = st.selectbox("⚖️ 검증 세부 역할 (교차검증)", [
-            "제공된 자료의 비판적 검토 및 논리적 모순 체크", 
-            "경쟁사 대비 약점 분석 및 한계점 지적", 
-            "데이터 팩트 체크 및 누락된 시각 보완"
+        ai2_role = st.selectbox("⚖️ Verification Role (Cross-Check)", [
+            "Critical review of provided data and logical contradiction check", 
+            "Analyze weaknesses compared to competitors and point out limitations", 
+            "Fact-check data and supplement missing perspectives"
         ])
         
-    report_format = st.text_input("📑 인용 스타일 / 세부 포맷", value="마크다운 3단락 (핵심 요약, 세부 분석, 결론 및 전망)", key="wizard_format")
+    report_format = st.text_input("📑 Citation Style / Detail Format", value="3-paragraph Markdown (Key Summary, Detailed Analysis, Conclusion & Outlook)", key="wizard_format")
 
     st.divider()
-    if st.button("프롬프트 자동 생성 및 시작", type="primary", use_container_width=True):
+    if st.button("Generate Prompt & Start", type="primary", use_container_width=True):
         if not topic:
-            st.error("조사 주제를 입력해주세요!")
+            st.error("Please enter a research topic!")
         else:
             generated_prompt = f"""# Cross-AI WorkFlow Blueprint
 
-## 1. 시스템 지시사항 (System Instructions)
-- **[역할]** 너는 사회과학 및 관련 분야 체계적 문헌고찰 경험이 있는 연구 보조원이다. (추가 부여 역할: {ai1_role}, {ai2_role})
-- **[범위/권한]** 명시된 시기·지역·분야를 벗어난 추론 금지. 출처에 없는 내용은 "근거 부족"으로 명시. 확신 없는 주장은 단정하지 말 것.
-- **[제약]** 특정 이론적 입장을 강요하지 말 것. 원문 그대로 인용 금지, 반드시 패러프레이즈 할 것.
-- **[포맷 규칙]** 표/불릿 활용, 인용 스타일은 요청 시 지정된 것을 따름. (지정 포맷: {report_format})
+## 1. System Instructions
+- **[Role]** You are a research assistant with experience in systematic literature reviews in social sciences and related fields. (Assigned roles: {ai1_role}, {ai2_role})
+- **[Scope/Authority]** Do not infer beyond the specified time, region, or field. If content is missing from sources, explicitly state "Insufficient evidence." Do not make assertive claims without confidence.
+- **[Constraints]** Do not force a specific theoretical stance. Do not quote the original text directly; you must paraphrase.
+- **[Format Rules]** Utilize tables/bullet points. Follow the specified format/citation style: {report_format}
 
-## 2. 조사 주제
+## 2. Research Topic
 - **{topic}**
 
-## 3. 크로스체크 프로세스 (AI 역할 분담 및 워크플로우)
+## 3. Cross-Check Process (AI Roles & Workflow)
 
-**[Step 1: 병렬 리서치] - Gemini, Claude, ChatGPT 공통 수행**
-- 3개의 AI는 위 주제에 대하여 독립적으로 초기 데이터와 트렌드를 조사한다.
-- 각자의 응답 창에 지시사항에 맞게 패러프레이징 된 기본 조사 내용을 요약하여 출력한다.
+**[Step 1: Parallel Research] - Common Task for Gemini, Claude, ChatGPT**
+- The 3 AIs independently research initial data and trends regarding the topic above.
+- Provide a summarized, paraphrased initial research response following the instructions.
 
-**[Step 2: 취합/검증 및 보고서 설계] - Claude 전담 수행**
-- Step 1에서 생성된 다른 AI(Gemini, ChatGPT)의 조사 결과물들을 Claude에게 전달한다.
-- Claude는 모든 자료를 종합하여 논리적 모순을 비판적으로 교차 검증하고 누락된 팩트를 보완한다.
-- 검증된 최종 내용을 바탕으로 Markdown(.md) 형식의 상세한 보고서(설계도)를 작성한다.
+**[Step 2: Synthesis/Verification & Report Design] - Claude Exclusive Task**
+- The research outputs from the other AIs (Gemini, ChatGPT) from Step 1 will be provided to Claude.
+- Claude synthesizes all data, critically cross-checks for logical contradictions, and supplements missing facts.
+- Based on the verified content, write a detailed report (blueprint) in Markdown (.md) format.
 
-**[Step 3: 최종 장표 이미지 생성] - Gemini 전담 수행**
-- Step 2에서 완성된 Claude의 마크다운 보고서 설계를 Gemini에게 전달한다.
-- Gemini는 해당 보고서를 기반으로, 전체 내용을 시각적으로 요약하는 1장짜리 발표용 장표 이미지를 생성한다.
+**[Step 3: Final Presentation Slide Generation] - Gemini Exclusive Task**
+- Claude's Markdown report design from Step 2 will be provided to Gemini.
+- Based on the report, Gemini generates a single 1-page visual presentation slide image summarizing the entire content.
 """
             st.session_state["editor_text"] = generated_prompt
             
