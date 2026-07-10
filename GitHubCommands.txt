@@ -12,7 +12,8 @@
 
 5. (Optional) python.exe -m pip install --upgrade pip     # pip update
 
-6. pip install streamlit anthropic google-genai pandas numpy plotly openpyxl scipy python-dotenv     # 필수 패키지 설치 (추가/제외 가능)
+6. pip install streamlit anthropic google-genai pandas numpy plotly openpyxl scipy python-dotenv streamlit-quill
+	# 필수 패키지 설치 (추가/제외 가능)
 
 7. pip freeze > requirements.txt     # 재현가능 기록관리
 
@@ -34,7 +35,7 @@
 	. 1번 PC 작업 종료 : git add . -> git commit -m "..." -> git push origin main
 	. 2번 PC 작업 시작 : git pull origin main
 	. 2번 PC 작업 종료 : git add . -> git commit -m "..." -> git push origin main
-	. 1번 PC 작업 시작 : git puall origin main
+	. 1번 PC 작업 시작 : git pull origin main
 	...
 	% 바꾸기 직전 push -> 시작시 pull
 

@@ -1,12 +1,10 @@
-1단계 : AI별 Role부여 및 Prompt 생성
+Step 1 : Assign Roles per AI \& Generate Prompts
 
-2단계 : 교차 검증
+Step 2 : Cross-Validation between AI's
 
-3단계 : 취합 및 보고서(.md) 작성
+Step 3 : Compile Findings \& Draft Report
 
-4단계 : 보고서 검토 및 산출물 생성
+Step 4 : Review Report \& Produce Deliverable
 
-5단계 : 산출물 검토 및 수정
-
-
+Step 5 : Review \& Revise Deliverable (User)
 
