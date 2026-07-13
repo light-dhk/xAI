@@ -1,0 +1,89 @@
+# GitHub Local Pjt Folder Generation
+mkdir app, app\api, app\core, app\static, app\templates, tests
+python.exe -m pip install --upgrade pip     # pip update
+
+pip install anthropic google-genai pandas numpy plotly openpyxl scipy python-dotenv fastapi uvicorn[standard] `
+jinja2 python-multipartpython.exe pydantic-settings pyinstaller   % pkg's install, backtick(`) : line-new
+
+[System.IO.File]::WriteAllLines("$PWD\.gitignore", @(".venv/", "__pycache__/", "*.pyc", ".streamlit/secrets.toml"))   % .gitignore
+python -m venv .venv
+.venv\Scripts\Activate.ps1   % virtual environment activation
+	% @policy error -> Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned     # User Set
+		cf. Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned     # Terminal Set
+pip freeze > requirements.txt   % install list management
+
+# GitHub Repository Generation   % README/gitignore should be unchecked!
+git init   % initialization
+git branch -M main
+git remote add origin https://github.com/light-dhk/xAI.git     # branch는 pointer, 주소는 예시
+
+# After Local Pjt Coding
+git add .   % or file name
+git status     % to commit list check
+git count-objects -vH   % Check Object Size
+git commit -m "...commit history..."
+git push -u origin main   % commit 1st time @ pjt folder : 2nd~ git push, main is push local branch, -u : --set-upstream : local main <-> origin/main
+
+#1PC ↔ #2 PC Git work flow briefing
+	. #1 PC end : git add . -> git commit -m "..." -> git push origin main
+	. #2 PC start : git pull origin main   % sync-down updated files
+	. #2 PC end : git add . -> git commit -m "..." -> git push origin main
+	. #1 PC start : git pull origin main
+	...repeat...   % push -> pull -> push -> ...
+
+#2PC clone (repository share)
+	. folder generation in same name
+	. git clone https://github.com/light-dhk/xAI.git .
+
+# Docker Image Generation (PowerShell Terminal)
+docker build -t qapi-app .     % imaging
+docker run -p 8000:8000 qapi-app     % browzing
+
+# Docker image Transfer (security check needed !)
+docker save -o qapi-app.tar qapi-app     % sender save action
+docker load -i qapi-app.tar     % receiver load action (if docker installed)
+docker run -p 8000:8000 qapi-app     % same as sender run command
+
+# Docker Cloud Upload
+docker login [registry address]
+docker tag qapi-app [registry address]/qapi-app:lastest
+docker push [reg_add]/qapi-app:lastest
+(next step) cloud exection, different by services
+cf. Render/Railway/Cloudtype (Rooki Friendly Services) : GitHub Dockerfile push -> Auto Read/build/push/deploy !
+
+# recommended file structure for MnS pjt
+MnS/
+├── .venv/
+├── .vscode/
+│   ├── settings.json
+│   └── launch.json
+├── app/
+│   ├── __init__.py
+│   ├── main.py                # FastAPI 진입점 (app = FastAPI())
+│   ├── api/
+│   │   ├── __init__.py
+│   │   └── routes_simulation.py   # 라우터 (기능별로 분리)
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── config.py           # 환경변수/설정
+│   │   └── security.py         # 인증 로직
+│   ├── models/
+│   │   ├── __init__.py
+│   │   └── schemas.py          # Pydantic request/response 모델
+│   ├── services/
+│   │   ├── __init__.py
+│   │   └── simulation.py       # 실제 시뮬레이션/분석 로직
+│   ├── data/                   # 입출력 데이터 (필요시)
+│   ├── static/
+│   └── templates/
+├── tests/
+│   ├── test_api.py
+│   └── test_services.py
+├── run.py                       # PyInstaller/직접 실행용 진입점
+├── .env
+├── .env.example                 # ← 추가: 실제 값 없는 템플릿, git에 커밋
+├── .gitignore
+├── requirements.txt
+└── README.md
+
+- end -
