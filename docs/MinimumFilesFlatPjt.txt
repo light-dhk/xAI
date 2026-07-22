@@ -1,0 +1,26 @@
+% Flat Architecture for Prototype : Gemini -> Claude -> ChatGPT verification
+
+project/
+ |
+│				# Backend
+├── main.py              	# FastAPI start, Routing, API, Static, Setting
+├── engine.py            	# Core Logic for AI Algorithm, Data Analysis, Simulation
+├── schemas.py           	# Pydantic (Data Model) Request/Response
+├── routers.py			# API EndPoint, HTML Page Routing
+├── agent.py			# Workflow, Task Routing, AI Agent
+├── storage.py			# CSV, SQLite, JSON, Memory, Data I/O
+├── config.py            	# Environ Set and Variables, Path, LogSet
+ |
+ |				# FrontEnd
+├── index.html          	# Web UI Layout
+├── script.js            		# UI Logic, API request, JS(fetch/chart) screen control
+├── style.css            		# CSS UI Design, Theme
+ |
+ |				# Project
+├── requirements.txt		# Python pkg list
+├── .env				# Environment Variables (API Key, Secret, ...)
+├── .gitignore			# Git execption file/folder list
+└── README.md		# Pjt guide
+
+-end-
+

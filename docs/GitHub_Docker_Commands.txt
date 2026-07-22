@@ -1,0 +1,55 @@
+# GitHub Local Pjt Folder Generation
+mkdir app, app\api, app\core, app\static, app\templates, tests
+python.exe -m pip install --upgrade pip     # pip update
+
+pip install pandas numpy plotly openpyxl scipy python-dotenv fastapi uvicorn[standard] `
+jinja2 python-multipart pydantic-settings pyinstaller   % pkg's install, backtick(`) : line-new
+
+[System.IO.File]::WriteAllLines("$PWD\.gitignore", @(".venv/", "__pycache__/", "*.pyc", ".streamlit/secrets.toml"))   % .gitignore
+python -m venv .venv
+.venv\Scripts\Activate.ps1   % virtual environment activation
+	% @policy error -> Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned     # User Set
+		cf. Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned     # Terminal Set
+pip freeze > requirements.txt   % install list management
+
+# GitHub Repository Generation   % README/gitignore should be unchecked!
+git init   % initialization
+git branch -M main
+git remote add origin https://github.com/light-dhk/MnS.git     % branch는 pointer, 주소는 예시
+
+# After Local Pjt Coding
+git add .   % or file name
+git status     % to commit list check
+git count-objects -vH   % Check Object Size
+git commit -m "...commit history..."
+git push -u origin main   % commit 1st time @ pjt folder : 2nd~ git push, main is push local branch, -u : --set-upstream : local main <-> origin/main
+
+#1PC ↔ #2 PC Git work flow briefing
+git status -> git branch -> git pull    % Check add, branch, update
+. #1 PC end : git add . -> git commit -m "..." -> git push origin main
+. #2 PC start : git pull origin main   % sync-down updated files
+. #2 PC end : git add . -> git commit -m "..." -> git push origin main
+. #1 PC start : git pull origin main
+...repeat...   % push -> pull -> push -> ...
+
+#2PC clone (repository share)
+	. folder generation in same name
+	. git clone https://github.com/light-dhk/MnS.git .
+
+# Docker Image Generation (PowerShell Terminal)
+docker build -t qapi-app .     % imaging
+docker run -p 8000:8000 qapi-app     % browzing
+
+# Docker image Transfer (security check needed !)
+docker save -o qapi-app.tar qapi-app     % sender save action
+docker load -i qapi-app.tar     % receiver load action (if docker installed)
+docker run -p 8000:8000 qapi-app     % same as sender run command
+
+# Docker Cloud Upload
+docker login [registry address]
+docker tag qapi-app [registry address]/qapi-app:lastest
+docker push [reg_add]/qapi-app:lastest
+(next step) cloud exection, different by services
+cf. Render/Railway/Cloudtype (Rooki Friendly Services) : GitHub Dockerfile push -> Auto Read/build/push/deploy !
+
+- end -

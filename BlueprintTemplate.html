@@ -1,0 +1,25 @@
+<p><br></p>
+<h2>xAI WorkFlow Intro</h2>
+<p><br></p>
+<h3>What is xAIPM?</h3>
+<p><strong>xAIPM (Cross-AI Prompt Manager)</strong> is a lightweight workspace for running a <strong>Cross-AI Cross-Validation Workflow</strong> across ChatGPT, Claude, and Gemini. Instead of relying on a single model, it lets you route a research topic through parallel research, cross-validation, synthesis, and final report generation &mdash; then collects every step's output in one editor so you can save, copy, or export the whole session as a single HTML report.</p>
+<p><br></p>
+<h3>Workflow Diagram</h3>
+{diagram_html}
+<p><br></p>
+<h3>Research Topic : {topic}</h3>
+<h3>Manager AI : {manager_ai}</h3>
+<p><br></p>
+<h3>Initial Prompt for the Manager AI</h3>
+<p>Paste the prompt below into <strong>{manager_ai}</strong> to have it design the workflow &mdash; rather than having the app pre-assign roles.</p>
+<blockquote>
+You are the Manager AI ({manager_ai}) orchestrating a Cross-AI Cross-Validation Workflow on: <strong>{topic}</strong>.<br>
+Design and assign the following 4 steps to ChatGPT, Claude, and Gemini as you see fit:<br>
+1) Parallel Research &mdash; define each AI's specific research angle on the topic.<br>
+2) Cross-Validation &mdash; define how findings will be fact-checked and contradictions resolved.<br>
+3) Claude Synthesis &mdash; instruct Claude to consolidate validated findings into one well-structured report, choosing the most appropriate format and citation style for the topic.<br>
+4) Gemini Report &mdash; instruct Gemini to turn the report into a polished final deliverable.<br>
+For each step, state the responsible AI, its exact task, and the expected output format.<br>
+If evidence is insufficient at any step, explicitly state "Insufficient evidence" rather than guessing.<br>
+Return your workflow design as a numbered list, one short paragraph per step.
+</blockquote>

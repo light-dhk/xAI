@@ -6,7 +6,7 @@ import io
 import json
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 import streamlit as st
 import streamlit.components.v1 as components
 from streamlit_quill import st_quill
@@ -17,7 +17,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 # ---------------------------------------------------------------------------
 DEFAULT_TARGET_AI = "Claude"
 TEMPLATE_FILENAME = "WorkFlowTemplate.md"
-BLUEPRINT_TEMPLATE_FILENAME = "BlueprintTemplate.md"
+BLUEPRINT_TEMPLATE_FILENAME = "BlueprintTemplate.html"
 HELP_CONTENT_FILENAME = "HelpContent.md"
 
 AI_CHAT_SITES = {
@@ -73,11 +73,13 @@ def _wrap_text(draw: "ImageDraw.ImageDraw", text: str, font, max_width: int) -> 
         lines.append(current)
     return lines
 
+@st.cache_data(show_spinner=False)
 def build_workflow_diagram_png(ai1_role: str, ai2_role: str) -> bytes:
     """Cross-AI 교차검증 워크플로우(Parallel Research -> Cross-Validation ->
     Claude Synthesis -> Gemini Report) 개념도를 PNG로 렌더링해서 반환.
     사용자 업로드가 아니라 항상 자동으로 생성됨.
-    다크그레이 라운드 카드 배경 + 그림자 처리된 고딕 타이틀."""
+    다크그레이 라운드 카드 배경 + 그림자 처리된 고딕 타이틀.
+    동일한 (ai1_role, ai2_role) 조합에 대해서는 st.cache_data로 재렌더링을 생략함."""
     width, height = 1080, 340
     base = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(base)
@@ -175,6 +177,7 @@ def compute_workflow_height(text: str, min_px: int = 90, max_px: int = 220) -> i
     estimated = 24 + line_count * 15  # 0.7rem 폰트 + line-height 1.05 기준 1줄 ≈ 15px
     return max(min_px, min(max_px, estimated))
 
+@st.cache_data(show_spinner=False)
 def load_default_prompt_template() -> str:
     try:
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -229,14 +232,18 @@ def do_clear() -> None:
     replace_editor_content("")
 
 def do_save(current_html: str) -> bool:
-    """History에 저장만 수행. 에디터 내용을 지우거나 바꾸는 부수효과는 없음."""
+    """History에 저장만 수행. 에디터 내용을 지우거나 바꾸는 부수효과는 없음.
+    Date/Time은 화면 텍스트 필드 값과 무관하게, 이 함수가 호출되는 "그 순간"의
+    실제 시각(datetime.now())을 항상 정확히 기록에 찍는다 — Save 버튼을 누른
+    시점이 곧 기록 시각이 되도록 보장하기 위함."""
     if not current_html or current_html.strip() == "<p><br></p>":
         st.toast("⚠️ Editor is empty!")
         return False
 
     ai = st.session_state.get("header_ai", "").strip() or DEFAULT_TARGET_AI
-    date_str = st.session_state.get("header_date", "").strip() or datetime.now().strftime("%Y-%m-%d")
-    time_str = st.session_state.get("header_time", "").strip() or datetime.now().strftime("%H:%M:%S")
+    now = datetime.now()
+    date_str = now.strftime("%Y-%m-%d")
+    time_str = now.strftime("%H:%M:%S")
     topic = st.session_state.get("header_topic", "").strip() or "Untitled"
     
     unique_id = uuid.uuid4().hex[:8]
@@ -261,33 +268,48 @@ def load_history_to_editor(record_id: str) -> None:
         st.session_state["header_ai"] = record["ai"]
         st.session_state["header_topic"] = record["topic"]
 
+def delete_history_item(record_id: str) -> None:
+    """사이드바 🗑️ 버튼에서 호출. 에디터 내용에는 영향 없이 History 항목 하나만 제거."""
+    st.session_state["history"] = [
+        item for item in st.session_state["history"] if item["id"] != record_id
+    ]
+
 # ---------------------------------------------------------------------------
 # Externalized Blueprint Template (developer-editable, no Python needed)
 # ---------------------------------------------------------------------------
-DEFAULT_BLUEPRINT_TEMPLATE = """<h2>Cross-AI WorkFlow Blueprint</h2>
-<h3>1. System Instructions</h3>
-<ul>
-    <li><strong>[Role]</strong> You are a research assistant. (Assigned roles: {ai1_role}, {ai2_role})</li>
-    <li><strong>[Scope]</strong> Do not infer beyond the specified bounds. Explicitly state "Insufficient evidence" if needed.</li>
-    <li><strong>[Format Rules]</strong> Follow the specified style: {report_format}</li>
-</ul>
+DEFAULT_BLUEPRINT_TEMPLATE = """<h2>xAI WorkFlow Intro</h2>
 <p><br></p>
-<h3>2. Research Topic : {topic}</h3>
+<h3>What is xAIPM?</h3>
+<p><strong>xAIPM (Cross-AI Prompt Manager)</strong> is a lightweight workspace for running a <strong>Cross-AI Cross-Validation Workflow</strong> across ChatGPT, Claude, and Gemini. Instead of relying on a single model, it lets you route a research topic through parallel research, cross-validation, synthesis, and final report generation &mdash; then collects every step's output in one editor so you can save, copy, or export the whole session as a single HTML report.</p>
 <p><br></p>
 <h3>Workflow Diagram</h3>
 {diagram_html}
 <p><br></p>
-<h3>3. Cross-AI Cross-Validation Workflow</h3>
-<p><strong>[Step 1] Parallel Research:</strong> Gemini, Claude, and ChatGPT independently research the topic and submit initial findings. <em>Role: {ai1_role}.</em></p>
-<p><strong>[Step 2] Cross-Validation:</strong> Each AI's findings are cross-checked against the others for factual accuracy, contradictions, and gaps. <em>Role: {ai2_role}.</em></p>
-<p><strong>[Step 3] Claude Synthesis:</strong> Claude consolidates all cross-validated findings into a single, coherent, well-structured report.</p>
-<p><strong>[Step 4] Gemini Report Generation:</strong> Gemini turns Claude's consolidated report into the final polished deliverable (presentation slide or visual summary).</p>
+<h3>Research Topic : {topic}</h3>
+<h3>Manager AI : {manager_ai}</h3>
+<p><br></p>
+<h3>Initial Prompt for the Manager AI</h3>
+<p>Paste the prompt below into <strong>{manager_ai}</strong> to have it design the workflow &mdash; rather than having the app pre-assign roles.</p>
+<blockquote>
+You are the Manager AI ({manager_ai}) orchestrating a Cross-AI Cross-Validation Workflow on: <strong>{topic}</strong>.<br>
+Design and assign the following 4 steps to ChatGPT, Claude, and Gemini as you see fit:<br>
+1) Parallel Research &mdash; define each AI's specific research angle on the topic.<br>
+2) Cross-Validation &mdash; define how findings will be fact-checked and contradictions resolved.<br>
+3) Claude Synthesis &mdash; instruct Claude to consolidate validated findings into one well-structured report, choosing the most appropriate format and citation style for the topic.<br>
+4) Gemini Report &mdash; instruct Gemini to turn the report into a polished final deliverable.<br>
+For each step, state the responsible AI, its exact task, and the expected output format.<br>
+If evidence is insufficient at any step, explicitly state "Insufficient evidence" rather than guessing.<br>
+Return your workflow design as a numbered list, one short paragraph per step.
+</blockquote>
 """
 
+@st.cache_data(show_spinner=False)
 def load_blueprint_template() -> str:
-    """BlueprintTemplate.md 파일이 있으면 그걸 사용(개발자가 Python 코드 없이 수정 가능),
+    """BlueprintTemplate.html 파일이 있으면 그걸 사용(개발자가 Python 코드 없이 수정 가능),
     없으면 코드 내장 기본값 사용. 사용 가능한 placeholder:
-    {ai1_role} {ai2_role} {report_format} {topic} {diagram_html}"""
+    {manager_ai} {topic} {diagram_html}
+    (ai1_role/ai2_role/report_format는 더 이상 앱이 미리 정하지 않고 Manager AI에게
+    위임하므로 제거됨 — 대신 어떤 AI를 Manager로 쓸지만 사용자가 선택함)"""
     try:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         path = os.path.join(base_dir, BLUEPRINT_TEMPLATE_FILENAME)
@@ -301,67 +323,59 @@ def load_blueprint_template() -> str:
 # ---------------------------------------------------------------------------
 # Initial Setup Wizard (Pop-up)
 # ---------------------------------------------------------------------------
-@st.dialog("🚀 Initial Setup: WorkFlow & Prompt Generator", width="large")
+@st.dialog("🚀 Initial Setup: xAI WorkFlow Intro", width="large")
 def setup_wizard_popup():
     st.markdown(
-        "Set up the **Cross-AI Cross-Validation Workflow**: "
-        "**Parallel Research → Cross-Validation → Claude Synthesis → Gemini Report**."
+        "This generates the **xAI WorkFlow Intro**: a short introduction to xAIPM plus a "
+        "ready-to-paste prompt that lets your chosen **Manager AI** design and run the "
+        "**Cross-AI Cross-Validation Workflow** for your topic &mdash; instead of the app "
+        "pre-assigning roles for you."
     )
     topic = st.text_input("🔍 Research Topic", placeholder="e.g., 2026년 글로벌 전고체 배터리 시장 동향", key="wizard_topic")
-    col1, col2 = st.columns(2)
-    with col1:
-        ai1_role = st.selectbox("🤖 Step 1: Parallel Research Role", [
-            "Data search and comprehensive trend summary",
-            "Collect latest news and statistical data",
-            "Analyze core technologies and principles"
-        ])
-    with col2:
-        ai2_role = st.selectbox("⚖️ Step 2: Cross-Validation Role", [
-            "Critical review of provided data and logical contradiction check",
-            "Analyze weaknesses compared to competitors and point out limitations",
-            "Fact-check data and supplement missing perspectives"
-        ])
-    report_format = st.text_input("📑 Citation Style / Detail Format", value="3-paragraph Markdown (Key Summary, Detailed Analysis, Conclusion)")
-    st.caption("🖼️ A Cross-AI workflow diagram will be auto-generated and embedded in the Blueprint below.")
+    manager_ai = st.selectbox("🧭 Manager AI", list(AI_CHAT_SITES.keys()), index=1)
+    st.caption(
+        f"🖼️ A Cross-AI workflow diagram will be auto-generated and embedded below, "
+        f"and the initial prompt will be addressed to **{manager_ai}** as the Manager AI."
+    )
 
     st.divider()
-    if st.button("Generate Prompt & Start", use_container_width=True):
+    if st.button("Generate Intro & Start", use_container_width=True):
         if not topic:
             st.error("Please enter a research topic!")
         else:
-            diagram_png = build_workflow_diagram_png(ai1_role, ai2_role)
+            # Step 1/2 역할은 더 이상 이 팝업에서 미리 정하지 않음(Manager AI에게 위임) —
+            # 다이어그램은 항상 같은 범용 라벨로 생성됨 (ai2_role=None → 기본 문구 사용).
+            diagram_png = build_workflow_diagram_png("", "")
             diagram_b64 = base64.b64encode(diagram_png).decode("utf-8")
             diagram_html = f'<p><img src="data:image/png;base64,{diagram_b64}" style="max-width:100%; border-radius:6px;" /></p>'
 
             template = load_blueprint_template()
             fill_values = {
-                "ai1_role": ai1_role,
-                "ai2_role": ai2_role,
-                "report_format": report_format,
+                "manager_ai": manager_ai,
                 "topic": topic,
                 "diagram_html": diagram_html,
             }
             try:
                 generated_html = template.format(**fill_values)
             except (KeyError, IndexError, ValueError) as e:
-                st.warning(f"⚠️ BlueprintTemplate.md formatting error ({e}) — falling back to default template.")
+                st.warning(f"⚠️ BlueprintTemplate.html formatting error ({e}) — falling back to default template.")
                 generated_html = DEFAULT_BLUEPRINT_TEMPLATE.format(**fill_values)
 
             replace_editor_content(generated_html)
-            st.session_state["header_ai"] = "WorkFlow Blueprint"
+            st.session_state["header_ai"] = manager_ai
             st.session_state["header_topic"] = topic
-            now = datetime.now() + timedelta(seconds=1)  # 초기 팝업 첫 History 항목: Time을 1초 뒤로
-            st.session_state["header_date"] = now.strftime("%Y-%m-%d")
-            st.session_state["header_time"] = now.strftime("%H:%M:%S")
-            do_save(generated_html)
+            do_save(generated_html)  # do_save가 실제 클릭 시점의 시각을 자동으로 찍음
             st.session_state["setup_complete"] = True
             st.rerun()
 
 # ---------------------------------------------------------------------------
 # HTML Exporter
 # ---------------------------------------------------------------------------
-def generate_standalone_html() -> str:
-    history_json = json.dumps(st.session_state["history"], ensure_ascii=False)
+@st.cache_data(show_spinner=False)
+def generate_standalone_html(history: list) -> str:
+    """history 리스트를 그대로 인자로 받아 st.cache_data로 캐싱.
+    history 내용(이미지 포함)이 바뀌지 않는 한 매 rerun마다 재직렬화/재생성하지 않음."""
+    history_json = json.dumps(history, ensure_ascii=False)
     html_template = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -501,6 +515,7 @@ DEFAULT_HELP_CONTENT = """**Quick Guide (Rich Text MVP)**
   - Use **DownLoad(HTML)** below the editor to backup your records to local PC.
 """
 
+@st.cache_data(show_spinner=False)
 def load_help_content() -> str:
     """HelpContent.md 파일이 있으면 그걸 사용(개발자가 Python 코드 없이 수정 가능),
     없으면 코드 내장 기본값 사용."""
@@ -527,8 +542,12 @@ def main():
 
     # header_ai/date/time/topic 위젯이 생성되기 전에 반드시 먼저 처리해야 함.
     # (위젯 인스턴스화 이후에는 st.session_state[해당 key] 재할당이 예외를 발생시킴)
-    if st.session_state.pop("_pending_header_reset", False):
-        reset_header()
+    # Save Session 클릭 직후 다음 rerun에서: 화면에 보이는 Date/Time(참고용, 읽기전용)만
+    # 실제 저장이 이뤄진 시각으로 갱신. AI/Topic/에디터 내용은 건드리지 않음(비파괴적 저장).
+    if st.session_state.pop("_pending_time_stamp_now", False):
+        now = datetime.now()
+        st.session_state["header_date"] = now.strftime("%Y-%m-%d")
+        st.session_state["header_time"] = now.strftime("%H:%M:%S")
 
     if not st.session_state.get("setup_complete"):
         setup_wizard_popup()
@@ -622,9 +641,15 @@ def main():
             with st.container(key="history_list_wrap"):
                 for item in st.session_state["history"]:
                     label = f"{item['time']}_{item['ai']}_{item['topic']}"
-                    if st.button(f"📄 {label}", key=f"btn_{item['id']}", use_container_width=True):
-                        load_history_to_editor(item['id'])
-                        st.rerun()
+                    col_item, col_del = st.columns([5, 1], gap="small")
+                    with col_item:
+                        if st.button(f"📄 {label}", key=f"btn_{item['id']}", use_container_width=True):
+                            load_history_to_editor(item['id'])
+                            st.rerun()
+                    with col_del:
+                        if st.button("🗑️", key=f"del_{item['id']}", use_container_width=True, help="Delete this entry"):
+                            delete_history_item(item['id'])
+                            st.rerun()
 
     # --- Main Header Layout ---
     col_title, col_links, col_help = st.columns([6, 3, 1], vertical_alignment="top")
@@ -646,9 +671,9 @@ def main():
     with col_ai:
         st.text_input("Target AI", key="header_ai", placeholder="e.g. Claude")
     with col_date:
-        st.text_input("Date", key="header_date")
+        st.text_input("Date", key="header_date", disabled=True, help="Auto-set to the exact moment you click 💾 Save Session")
     with col_time:
-        st.text_input("Time", key="header_time")
+        st.text_input("Time", key="header_time", disabled=True, help="Auto-set to the exact moment you click 💾 Save Session")
     with col_topic:
         st.text_input("Topic", key="header_topic", placeholder="Research topic...")
 
@@ -665,11 +690,17 @@ def main():
     )
     inject_dynamic_editor_resize()
 
+    # st_quill은 컴포넌트가 remount된 직후(예: Wizard 생성 직후, History 로드 직후)
+    # 사용자가 아직 아무 것도 편집하지 않았다면 None(혹은 이전 stale 값)을 반환할 수 있다.
+    # 이 경우 방금 세팅한 session_state["editor_content"]를 그대로 "현재 내용"으로 취급한다.
+    # (이 폴백이 없으면 Wizard 직후 바로 Save/Copy를 눌렀을 때 "Editor is empty!"로 오작동함)
+    effective_content = current_content if current_content else st.session_state["editor_content"]
+
     # --- Action Bar ---
     # 버튼 이름을 변경하고 type="primary"를 제거하여 흰색/회색 스타일로 통일
     col_download, col_empty, col_clear, col_copy, col_save = st.columns([2.5, 3.6, 1.4, 1.5, 2.0], vertical_alignment="center")
     with col_download:
-        download_html = generate_standalone_html()
+        download_html = generate_standalone_html(st.session_state["history"])
         st.download_button(
             label="📥 DownLoad(HTML)",
             data=download_html,
@@ -683,12 +714,13 @@ def main():
             do_clear()
             st.rerun()
     with col_copy:
-        render_multipart_copy_button(current_content)
+        render_multipart_copy_button(effective_content)
     with col_save:
         if st.button("💾 Save Session", use_container_width=True): # type="primary" 제거됨
-            if do_save(current_content):
-                do_clear()
-                st.session_state["_pending_header_reset"] = True
+            # 저장은 "현재 내용을 History에 스냅샷으로 남기는 것"일 뿐,
+            # 에디터를 비우거나 AI/Topic을 초기화하지 않음 — 이어서 계속 편집 가능.
+            if do_save(effective_content):
+                st.session_state["_pending_time_stamp_now"] = True
                 st.rerun()
 
 if __name__ == "__main__":

@@ -1,0 +1,4 @@
+% for MVP startup for learning LLM API world
+	OpenAI: GPT-5.6 Luna : platform.openai.com -> OpenAI API Key (Luna)
+	Anthropic: Claude Haiku : platform.claude.com -> Claude API Key (Haiku)
+	Google: Gemini free API : aistudio.google.com/api-keys -> Default Gemini API key
